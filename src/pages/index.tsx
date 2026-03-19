@@ -8,14 +8,32 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [checking, setChecking] = useState(true)
 
-  // Save ?token= from email link to sessionStorage before login clears the URL
   useEffect(() => {
+    // Save ?token= from email link immediately
     const params = new URLSearchParams(window.location.search)
     const token = params.get('token')
     if (token) {
-      sessionStorage.setItem('pending_token', token)
+      sessionStorage.setItem('mp_pending_token', token)
     }
+
+    // Check if already logged in
+    fetch('/api/me').then(r => r.ok ? r.json() : null).then(d => {
+      if (d?.role === 'adviser') {
+        router.push('/adviser')
+      } else if (d?.role === 'client') {
+        // If there's a pending token, log out so adviser can log in
+        const pending = sessionStorage.getItem('mp_pending_token')
+        if (pending) {
+          fetch('/api/logout', { method: 'POST' }).then(() => setChecking(false))
+        } else {
+          router.push('/client')
+        }
+      } else {
+        setChecking(false)
+      }
+    }).catch(() => setChecking(false))
   }, [])
 
   const handleLogin = async () => {
@@ -30,15 +48,17 @@ export default function LoginPage() {
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Invalid credentials'); setLoading(false); return }
+
       if (data.role === 'adviser') {
-        const pending = sessionStorage.getItem('pending_token')
+        const pending = sessionStorage.getItem('mp_pending_token')
         if (pending) {
-          sessionStorage.removeItem('pending_token')
           router.push(`/adviser?token=${pending}`)
         } else {
           router.push('/adviser')
         }
       } else {
+        // Client logged in — clear any pending token
+        sessionStorage.removeItem('mp_pending_token')
         router.push('/client')
       }
     } catch {
@@ -48,6 +68,8 @@ export default function LoginPage() {
   }
 
   const handleKey = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleLogin() }
+
+  if (checking) return null
 
   return (
     <div style={{ minHeight: '100vh', background: '#f4f3ef', display: 'flex', flexDirection: 'column' }}>
@@ -76,6 +98,8 @@ export default function LoginPage() {
                   placeholder="Enter your username"
                   autoComplete="username"
                   style={{ padding: '10px 14px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, color: '#222', background: '#fff', width: '100%' }}
+                  onFocus={e => e.target.style.borderColor = '#1FBCA1'}
+                  onBlur={e => e.target.style.borderColor = '#ddd'}
                 />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -88,6 +112,8 @@ export default function LoginPage() {
                   placeholder="Enter your password"
                   autoComplete="current-password"
                   style={{ padding: '10px 14px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, color: '#222', background: '#fff', width: '100%' }}
+                  onFocus={e => e.target.style.borderColor = '#1FBCA1'}
+                  onBlur={e => e.target.style.borderColor = '#ddd'}
                 />
               </div>
               {error && (
