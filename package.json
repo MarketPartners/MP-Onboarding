@@ -1,0 +1,24 @@
+{
+  "name": "mp-intake-v5",
+  "version": "5.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "14.2.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "docx": "9.5.3",
+    "resend": "3.2.0",
+    "jose": "5.2.4",
+    "@neondatabase/serverless": "0.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "20.12.7",
+    "@types/react": "18.3.1",
+    "typescript": "5.4.5"
+  }
+}
