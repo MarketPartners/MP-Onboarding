@@ -48,11 +48,30 @@ export default function AdviserPage() {
   // ── Auth + initial load ───────────────────────────────────────────────────
   useEffect(() => {
     fetch('/api/me').then(r => {
-      if (!r.ok) { router.push('/'); return null }
+      if (!r.ok) {
+        // Not logged in — check if there's a token and preserve it before redirecting
+        const params = new URLSearchParams(window.location.search)
+        const token = params.get('token') || sessionStorage.getItem('pending_token')
+        if (token) sessionStorage.setItem('pending_token', token)
+        router.push('/')
+        return null
+      }
       return r.json()
     }).then(async d => {
       if (!d) return
-      if (d.role !== 'adviser') { router.push('/client'); return }
+      if (d.role !== 'adviser') {
+        // Logged in as client — if there's a token, log out and redirect to login
+        const params = new URLSearchParams(window.location.search)
+        const token = params.get('token') || sessionStorage.getItem('pending_token')
+        if (token) {
+          sessionStorage.setItem('pending_token', token)
+          await fetch('/api/logout', { method: 'POST' })
+          router.push('/')
+          return
+        }
+        router.push('/client')
+        return
+      }
       setUsername(d.username)
       setAuthChecked(true)
 
