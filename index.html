@@ -1,0 +1,1363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio Rebalancer — Market Partners</title>
+<!-- SheetJS for xlsx model upload/download -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --navy:#0F1F35; --teal:#00DEB5; --teal-dim:rgba(0,222,181,0.10); --teal-band:rgba(0,222,181,0.08);
+  --bg:#F7F8FA; --surface:#ffffff; --border:#E4E7EC;
+  --text-primary:#111827; --text-secondary:#6B7280; --text-muted:#9CA3AF;
+  --buy:#059669; --buy-bg:#ECFDF5; --sell:#DC2626; --sell-bg:#FEF2F2;
+  --hold:#D97706; --hold-bg:#FFFBEB; --initiate:#7C3AED; --initiate-bg:#F5F3FF;
+  --exit:#9F1239; --exit-bg:#FFF1F2;
+  --font-mono:'SF Mono','Consolas','Monaco',monospace;
+  --sidebar-w:230px; --radius:8px;
+}
+body { font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif; font-size:14px; background:var(--bg); color:var(--text-primary); display:flex; min-height:100vh; line-height:1.5; }
+
+/* SIDEBAR */
+.sidebar { width:var(--sidebar-w); background:var(--navy); display:flex; flex-direction:column; position:fixed; top:0; left:0; bottom:0; z-index:100; overflow-y:auto; }
+.sidebar-logo { padding:18px 18px 14px; border-bottom:1px solid rgba(255,255,255,0.08); flex-shrink:0; }
+.logo-mark { display:flex; align-items:center; gap:10px; }
+.logo-icon { width:30px; height:30px; flex-shrink:0; }
+.logo-text { color:#fff; font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; line-height:1.3; }
+.logo-sub { color:var(--teal); font-size:10px; font-weight:400; letter-spacing:0.05em; text-transform:uppercase; margin-top:2px; display:block; }
+.sidebar-nav { padding:14px 10px 0; flex-shrink:0; }
+.nav-label { font-size:10px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:rgba(255,255,255,0.3); padding:0 8px; margin-bottom:5px; margin-top:14px; }
+.nav-label:first-child { margin-top:0; }
+.nav-btn { display:flex; align-items:center; gap:9px; width:100%; padding:8px 10px; border:none; background:none; cursor:pointer; color:rgba(255,255,255,0.55); font-size:13px; font-family:inherit; border-radius:6px; transition:background 0.15s,color 0.15s; text-align:left; }
+.nav-btn:hover { background:rgba(255,255,255,0.07); color:#fff; }
+.nav-btn.active { background:rgba(0,222,181,0.14); color:var(--teal); }
+.nav-btn svg { width:15px; height:15px; flex-shrink:0; }
+.sidebar-models { padding:10px; border-top:1px solid rgba(255,255,255,0.07); margin-top:auto; flex-shrink:0; }
+.model-chip { display:flex; align-items:center; justify-content:space-between; padding:6px 10px; background:rgba(255,255,255,0.04); border-radius:5px; margin-bottom:3px; cursor:pointer; transition:background 0.15s; }
+.model-chip:hover { background:rgba(255,255,255,0.08); }
+.model-chip.active { background:rgba(0,222,181,0.12); }
+.model-chip-name { font-size:12px; color:rgba(255,255,255,0.7); font-weight:500; }
+.model-chip.active .model-chip-name { color:var(--teal); }
+.model-chip-ct { font-size:10px; color:rgba(255,255,255,0.3); background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:8px; }
+
+/* MAIN */
+.main { margin-left:var(--sidebar-w); flex:1; display:flex; flex-direction:column; min-height:100vh; }
+.topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:0 24px; height:54px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:50; }
+.topbar-left { display:flex; align-items:center; gap:10px; }
+.topbar-title { font-size:15px; font-weight:600; }
+.topbar-sub { font-size:12px; color:var(--text-secondary); }
+.topbar-right { display:flex; gap:8px; align-items:center; }
+
+/* PRICE PILL */
+.price-pill { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:500; cursor:pointer; border:1px solid var(--border); background:var(--bg); color:var(--text-secondary); transition:all 0.15s; }
+.price-pill:hover { border-color:var(--teal); color:var(--teal); }
+.price-pill.loading { color:var(--hold); border-color:#FDE68A; background:var(--hold-bg); }
+.price-pill.ok { color:var(--buy); border-color:#6EE7B7; background:var(--buy-bg); }
+.price-pill.error { color:var(--sell); border-color:#FCA5A5; background:var(--sell-bg); }
+.pulse { width:6px; height:6px; border-radius:50%; background:currentColor; }
+.pulse.spin { animation:spin 1s linear infinite; width:10px; height:10px; border-radius:50%; border:2px solid currentColor; border-top-color:transparent; background:none; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* BUTTONS */
+.btn { display:inline-flex; align-items:center; gap:6px; padding:7px 13px; border-radius:var(--radius); font-size:13px; font-weight:500; font-family:inherit; cursor:pointer; border:none; transition:all 0.15s; white-space:nowrap; }
+.btn svg { width:13px; height:13px; flex-shrink:0; }
+.btn-ghost { background:transparent; color:var(--text-secondary); border:1px solid var(--border); }
+.btn-ghost:hover { background:var(--bg); color:var(--text-primary); }
+.btn-primary { background:var(--teal); color:var(--navy); }
+.btn-primary:hover { background:#00c9a4; }
+.btn-danger { background:var(--sell-bg); color:var(--sell); border:1px solid #FECACA; }
+.btn-danger:hover { background:#FEE2E2; }
+.btn-sm { padding:5px 10px; font-size:12px; }
+
+/* CONTENT */
+.content { padding:20px 24px; flex:1; }
+.page { display:none; }
+.page.active { display:block; }
+
+/* CARDS */
+.card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+.card-header { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+.card-title { font-size:13px; font-weight:600; }
+.card-body { padding:16px; }
+
+/* STEP LAYOUT */
+.step-row { display:grid; grid-template-columns:1fr 1.5fr; gap:16px; margin-bottom:18px; }
+.step-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; }
+.step-num { font-size:10px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:var(--teal); margin-bottom:4px; }
+.step-title { font-size:13px; font-weight:600; margin-bottom:12px; }
+
+/* SLEEVE BUILDER */
+.sleeve-list { display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
+.sleeve-row { display:flex; align-items:center; gap:8px; padding:10px 12px; background:var(--bg); border:1px solid var(--border); border-radius:6px; }
+.sleeve-row select { flex:2; font-size:12px; }
+.sleeve-row input[type=number] { flex:0 0 70px; font-size:12px; text-align:right; }
+.sleeve-pct { font-size:12px; color:var(--text-secondary); flex-shrink:0; }
+.sleeve-alloc-bar { height:4px; border-radius:2px; background:var(--border); margin-bottom:8px; overflow:hidden; }
+.sleeve-alloc-fill { height:100%; border-radius:2px; background:var(--teal); transition:width 0.3s; }
+.sleeve-total { display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--text-secondary); margin-bottom:10px; }
+.sleeve-total-val { font-family:var(--font-mono); font-weight:700; font-size:12px; }
+.sleeve-total-val.ok { color:var(--buy); }
+.sleeve-total-val.warn { color:var(--sell); }
+
+/* UPLOAD */
+.upload-zone { border:2px dashed var(--border); border-radius:var(--radius); padding:20px 14px; text-align:center; cursor:pointer; transition:border-color 0.15s,background 0.15s; background:var(--bg); position:relative; }
+.upload-zone:hover,.upload-zone.drag-over { border-color:var(--teal); background:var(--teal-dim); }
+.upload-zone input[type=file] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+.upload-main { font-size:13px; font-weight:500; margin-bottom:3px; }
+.upload-sub { font-size:11px; color:var(--text-secondary); }
+
+/* TABS */
+.tab-bar { display:flex; gap:1px; border-bottom:1px solid var(--border); margin-bottom:12px; }
+.tab-btn { padding:7px 14px; border:none; background:none; cursor:pointer; font-size:12px; font-family:inherit; color:var(--text-secondary); border-bottom:2px solid transparent; margin-bottom:-1px; transition:color 0.15s,border-color 0.15s; }
+.tab-btn.active { color:var(--teal); border-bottom-color:var(--teal); font-weight:500; }
+.tab-panel { display:none; }
+.tab-panel.active { display:block; }
+
+/* FORM */
+label.fl { display:block; font-size:11px; font-weight:500; color:var(--text-secondary); margin-bottom:4px; }
+input[type=text],input[type=number],select,textarea { width:100%; padding:7px 9px; border:1px solid var(--border); border-radius:6px; font-size:13px; font-family:inherit; color:var(--text-primary); background:var(--surface); outline:none; transition:border-color 0.15s; }
+input:focus,select:focus,textarea:focus { border-color:var(--teal); }
+.field-row { display:flex; gap:10px; margin-bottom:10px; }
+.field-row > * { flex:1; }
+.cash-row { display:flex; align-items:center; gap:8px; padding:10px 12px; background:var(--bg); border-radius:6px; border:1px solid var(--border); margin-top:10px; }
+.cash-row label { font-size:11px; font-weight:500; color:var(--text-secondary); white-space:nowrap; }
+.cash-row input { max-width:150px; }
+.cash-hint { font-size:11px; color:var(--text-muted); }
+
+/* TABLE */
+table { width:100%; border-collapse:collapse; font-size:12px; }
+th { text-align:left; padding:8px 10px; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; color:var(--text-secondary); border-bottom:1px solid var(--border); white-space:nowrap; }
+td { padding:9px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
+tr:last-child td { border-bottom:none; }
+tbody tr:hover td { background:#FAFBFC; }
+.num { font-family:var(--font-mono); font-size:11px; }
+.right { text-align:right; }
+
+/* SECTION DIVIDER for multi-sleeve results */
+.sleeve-divider { display:flex; align-items:center; gap:10px; margin:20px 0 12px; }
+.sleeve-divider-line { flex:1; height:1px; background:var(--border); }
+.sleeve-divider-label { font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-secondary); padding:4px 10px; background:var(--surface); border:1px solid var(--border); border-radius:4px; white-space:nowrap; }
+.sleeve-divider-alloc { font-size:11px; color:var(--teal); font-weight:600; font-family:var(--font-mono); }
+
+/* DRIFT BAR */
+.drift-track { position:relative; height:8px; border-radius:4px; background:#E9ECF0; width:110px; }
+.drift-band { position:absolute; top:0; bottom:0; border-radius:4px; background:var(--teal-band); border:1px solid rgba(0,222,181,0.2); }
+.drift-target { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--teal); border-radius:1px; }
+.drift-dot { position:absolute; top:-4px; width:4px; height:16px; border-radius:2px; transform:translateX(-50%); }
+.drift-dot.in { background:var(--buy); }
+.drift-dot.over { background:var(--sell); }
+.drift-dot.under { background:#2563EB; }
+.drift-dot.new { background:var(--initiate); }
+
+/* BADGES */
+.badge { display:inline-flex; align-items:center; gap:3px; padding:2px 7px; border-radius:4px; font-size:10px; font-weight:600; white-space:nowrap; }
+.badge-buy { background:var(--buy-bg); color:var(--buy); }
+.badge-sell { background:var(--sell-bg); color:var(--sell); }
+.badge-hold { background:#F0FDF4; color:#166534; }
+.badge-initiate { background:var(--initiate-bg); color:var(--initiate); }
+.badge-exit { background:var(--exit-bg); color:var(--exit); }
+
+/* STATS */
+.stats-row { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:18px; }
+.stat-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; }
+.stat-label { font-size:10px; color:var(--text-secondary); font-weight:500; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:5px; }
+.stat-value { font-size:22px; font-weight:700; font-family:var(--font-mono); line-height:1; }
+.stat-value.teal { color:var(--teal); }
+.stat-value.green { color:var(--buy); }
+.stat-value.red { color:var(--sell); }
+.stat-value.blue { color:#2563EB; }
+.stat-sub { font-size:10px; color:var(--text-secondary); margin-top:3px; }
+
+/* PRICE TABLE */
+.price-row { display:flex; align-items:center; gap:6px; padding:6px 0; border-bottom:1px solid var(--border); }
+.price-row:last-child { border-bottom:none; }
+.price-ticker { font-family:var(--font-mono); font-size:12px; font-weight:600; width:60px; flex-shrink:0; }
+.price-name { font-size:12px; color:var(--text-secondary); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.price-val { font-family:var(--font-mono); font-size:12px; font-weight:600; width:72px; text-align:right; flex-shrink:0; }
+.price-chg { font-size:10px; width:52px; text-align:right; flex-shrink:0; }
+.price-chg.up { color:var(--buy); }
+.price-chg.down { color:var(--sell); }
+
+/* MODEL EDITOR */
+.model-list-item { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:6px; cursor:pointer; transition:background 0.12s; border:1px solid transparent; margin-bottom:4px; }
+.model-list-item:hover { background:var(--bg); }
+.model-list-item.active { background:var(--teal-dim); border-color:rgba(0,222,181,0.2); }
+.model-list-name { font-size:13px; font-weight:600; flex:1; }
+.model-list-meta { font-size:11px; color:var(--text-secondary); }
+.model-holding-row { display:flex; align-items:center; gap:6px; padding:6px 0; border-bottom:1px solid var(--border); }
+.model-holding-row:last-child { border-bottom:none; }
+.model-holding-row input[type=text] { flex:1.2; font-size:12px; }
+.model-holding-row input[type=text]:first-child { max-width:72px; text-transform:uppercase; font-weight:600; font-family:var(--font-mono); }
+.model-holding-row input[type=number] { max-width:70px; font-size:12px; }
+.pct { font-size:11px; color:var(--text-secondary); flex-shrink:0; }
+.del-btn { width:24px; height:24px; border:none; background:none; cursor:pointer; color:var(--text-muted); border-radius:4px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.del-btn:hover { background:var(--sell-bg); color:var(--sell); }
+.total-bar { display:flex; justify-content:flex-end; align-items:center; gap:6px; padding:8px 0 0; font-size:11px; color:var(--text-secondary); border-top:1px solid var(--border); margin-top:6px; }
+.total-val { font-family:var(--font-mono); font-weight:700; font-size:13px; }
+.total-val.ok { color:var(--buy); }
+.total-val.warn { color:var(--sell); }
+
+/* NOTICE */
+.notice { padding:9px 12px; border-radius:6px; font-size:12px; display:flex; gap:7px; align-items:flex-start; margin-bottom:10px; }
+.notice.info { background:#EFF6FF; color:#1D4ED8; border:1px solid #BFDBFE; }
+.notice.warn { background:var(--hold-bg); color:#92400E; border:1px solid #FDE68A; }
+.notice.ok { background:var(--buy-bg); color:#065F46; border:1px solid #6EE7B7; }
+.notice svg { flex-shrink:0; width:13px; height:13px; margin-top:1px; }
+
+/* MISC */
+.empty { text-align:center; padding:36px 20px; color:var(--text-secondary); }
+.empty h3 { font-size:13px; font-weight:600; color:var(--text-primary); margin-bottom:4px; }
+.empty p { font-size:12px; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.mt8 { margin-top:8px; }
+.mt12 { margin-top:12px; }
+.mb12 { margin-bottom:12px; }
+.legend { display:flex; gap:12px; flex-wrap:wrap; padding:10px 16px; border-bottom:1px solid var(--border); }
+.leg { display:flex; align-items:center; gap:4px; font-size:10px; color:var(--text-secondary); }
+.leg-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.ovf { overflow-x:auto; }
+code { font-family:var(--font-mono); font-size:11px; background:var(--bg); padding:1px 4px; border-radius:3px; border:1px solid var(--border); }
+.dp { color:var(--sell); font-family:var(--font-mono); }
+.dn { color:var(--buy); font-family:var(--font-mono); }
+.dz { color:var(--text-muted); font-family:var(--font-mono); }
+.last-updated { font-size:10px; color:var(--text-muted); text-align:right; padding:6px 16px; border-top:1px solid var(--border); }
+.divider { border:none; border-top:1px solid var(--border); margin:14px 0; }
+.xlsx-upload-zone { border:2px dashed var(--border); border-radius:6px; padding:14px; text-align:center; cursor:pointer; background:var(--bg); position:relative; transition:border-color 0.15s,background 0.15s; }
+.xlsx-upload-zone:hover { border-color:var(--teal); background:var(--teal-dim); }
+.xlsx-upload-zone input[type=file] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+.xlsx-upload-zone p { font-size:12px; color:var(--text-secondary); }
+.model-import-hint { font-size:11px; color:var(--text-secondary); margin-top:4px; }
+
+@media(max-width:900px){
+  .sidebar{display:none;} .main{margin-left:0;} .step-row{grid-template-columns:1fr;} .stats-row{grid-template-columns:repeat(2,1fr);}
+}
+@media print{
+  .sidebar,.topbar,.btn,.upload-zone,.step-card{display:none!important;}
+  .main{margin-left:0;} .content{padding:0;} table{font-size:10px;}
+}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-mark">
+      <svg class="logo-icon" viewBox="0 0 32 32" fill="none">
+        <rect width="32" height="32" rx="6" fill="#00DEB5" fill-opacity="0.12"/>
+        <path d="M7 22L12 15L16 18.5L21 12L26 15" stroke="#00DEB5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="26" cy="15" r="2.5" fill="#00DEB5"/>
+      </svg>
+      <div>
+        <div class="logo-text">Market Partners</div>
+        <span class="logo-sub">Portfolio Rebalancer</span>
+      </div>
+    </div>
+  </div>
+  <div class="sidebar-nav">
+    <div class="nav-label">Workflow</div>
+    <button class="nav-btn active" onclick="showPage('rebalance')">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8h12M9 4l4 4-4 4"/></svg>
+      Rebalance client
+    </button>
+    <button class="nav-btn" onclick="showPage('models')">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+      Model portfolios
+    </button>
+    <button class="nav-btn" onclick="showPage('prices')">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="2,12 5,7 8,9 11,5 14,3"/><path d="M11 3h3v3"/></svg>
+      Live prices
+    </button>
+    <div class="nav-label">Active models</div>
+  </div>
+  <div class="sidebar-models" id="sidebar-model-list"></div>
+</nav>
+
+<!-- MAIN -->
+<div class="main">
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="topbar-title" id="topbar-title">Rebalance client portfolio</span>
+      <span class="topbar-sub" id="topbar-sub"></span>
+    </div>
+    <div class="topbar-right">
+      <div class="price-pill" id="price-pill" onclick="fetchAllPrices()" title="Click to refresh prices">
+        <div class="pulse" id="price-pulse"></div>
+        <span id="price-pill-text">Fetch prices</span>
+      </div>
+      <button class="btn btn-ghost" onclick="clearRebalance()">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 2l10 10M12 2L2 12"/></svg>
+        Clear
+      </button>
+      <button class="btn btn-primary" onclick="runRebalance()">
+        <svg viewBox="0 0 14 14" fill="currentColor"><path d="M3 2l9 5-9 5V2z"/></svg>
+        Run rebalance
+      </button>
+    </div>
+  </header>
+
+  <div class="content">
+
+    <!-- PAGE: REBALANCE -->
+    <div class="page active" id="page-rebalance">
+      <div class="step-row">
+
+        <!-- STEP 1: UPLOAD -->
+        <div class="step-card">
+          <div class="step-num">Step 1</div>
+          <div class="step-title">Upload client portfolio</div>
+
+          <div class="tab-bar">
+            <button class="tab-btn active" onclick="switchTab('upload')">Upload CSV</button>
+            <button class="tab-btn" onclick="switchTab('paste')">Paste / manual</button>
+          </div>
+
+          <div class="tab-panel active" id="tab-upload">
+            <div class="upload-zone" id="drop-zone"
+              ondragover="e=>{e.preventDefault();document.getElementById('drop-zone').classList.add('drag-over')}"
+              ondragleave="document.getElementById('drop-zone').classList.remove('drag-over')"
+              ondrop="handleDrop(event)">
+              <input type="file" accept=".csv,.txt" onchange="handleFile(event)">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="1.5" style="margin-bottom:6px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <div class="upload-main">Drop Praemium/custodian CSV or click to browse</div>
+              <div class="upload-sub">Accepts: Security, Security Name, Exch, Units, Last Price, Market Value…</div>
+            </div>
+            <div id="file-status" style="font-size:11px;color:var(--text-secondary);margin-top:6px;"></div>
+          </div>
+
+          <div class="tab-panel" id="tab-paste">
+            <div class="notice info">
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="6"/><path d="M7 6v4M7 4.5v.01"/></svg>
+              One row per holding: <code>TICKER.XAU, Name, Units, Price</code>
+            </div>
+            <textarea id="paste-area" rows="6" placeholder="CBA.XAU, Commonwealth Bank, 2382, 161.88&#10;BHP.XAU, BHP Group, 9604, 65.19&#10;MQG.XAU, Macquarie Group, 2624, 249.06"></textarea>
+            <button class="btn btn-ghost" style="margin-top:8px;" onclick="parsePaste()">Parse holdings</button>
+          </div>
+
+          <hr class="divider">
+
+          <!-- SLEEVE / ALLOCATION BUILDER -->
+          <div style="margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;">
+            <div style="font-size:12px;font-weight:600;">Portfolio allocation</div>
+            <button class="btn btn-ghost btn-sm" onclick="addSleeve()">
+              <svg viewBox="0 0 12 12" fill="currentColor" width="10" height="10"><path d="M6 1v10M1 6h10"/></svg>Add sleeve
+            </button>
+          </div>
+
+          <div class="notice info" id="sleeve-hint" style="margin-bottom:8px;">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="6"/><path d="M7 6v4M7 4.5v.01"/></svg>
+            Set each sleeve's allocation as % of total account. Single model = 100%. Multi-sleeve = e.g. 50% + 50%.
+          </div>
+
+          <div class="sleeve-alloc-bar"><div class="sleeve-alloc-fill" id="alloc-bar" style="width:0%"></div></div>
+          <div class="sleeve-total">
+            <span>Total allocated</span>
+            <span class="sleeve-total-val" id="sleeve-total-val">0%</span>
+          </div>
+
+          <div class="sleeve-list" id="sleeve-list"></div>
+
+          <div class="cash-row">
+            <label>Additional cash to deploy (AUD $)</label>
+            <input type="number" id="cash-in" placeholder="0" step="1000" min="0">
+          </div>
+        </div>
+
+        <!-- STEP 2: PREVIEW -->
+        <div class="step-card">
+          <div class="step-num">Step 2</div>
+          <div class="step-title">Holdings preview</div>
+          <div id="preview-area">
+            <div class="empty">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#D1D5DB" stroke-width="1.2" style="margin-bottom:8px"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/></svg>
+              <h3>No holdings loaded</h3>
+              <p>Upload a CSV or paste holdings above</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RESULTS -->
+      <div id="results-area" style="display:none;">
+        <div class="stats-row" id="stats-row"></div>
+        <div id="results-tables"></div>
+      </div>
+    </div>
+
+    <!-- PAGE: MODEL PORTFOLIOS -->
+    <div class="page" id="page-models">
+      <div class="grid2">
+        <div>
+          <div class="card mb12">
+            <div class="card-header">
+              <span class="card-title">Model portfolios</span>
+              <div style="display:flex;gap:6px;">
+                <button class="btn btn-ghost btn-sm" onclick="downloadTemplate()">
+                  <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 10v2h10v-2M7 2v7M4 6l3 3 3-3"/></svg>Download template
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="newModel()">
+                  <svg viewBox="0 0 12 12" fill="currentColor" width="10" height="10"><path d="M6 1v10M1 6h10"/></svg>New model
+                </button>
+              </div>
+            </div>
+            <div class="card-body" id="model-list-area"></div>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title" id="editor-title">Select a model to edit</span>
+              <div style="display:flex;gap:6px;" id="editor-actions"></div>
+            </div>
+            <div class="card-body" id="model-editor">
+              <div class="empty" style="padding:28px 0;"><h3>No model selected</h3><p>Select from the list or create a new one</p></div>
+            </div>
+          </div>
+
+          <!-- IMPORT XLSX -->
+          <div class="card" style="margin-top:16px;">
+            <div class="card-header"><span class="card-title">Import model from spreadsheet</span></div>
+            <div class="card-body">
+              <div class="notice info">
+                <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="6"/><path d="M7 6v4M7 4.5v.01"/></svg>
+                Required columns: <code>Ticker</code>, <code>Name</code>, <code>Exchange</code>, <code>Target %</code>. Download the template above for the exact format.
+              </div>
+              <div class="xlsx-upload-zone" id="xlsx-drop">
+                <input type="file" accept=".xlsx,.xls,.csv" onchange="importModelFile(event)">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="1.5" style="margin-bottom:4px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <p>Drop .xlsx or .csv, or click to browse</p>
+              </div>
+              <div id="import-status" class="model-import-hint"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: LIVE PRICES -->
+    <div class="page" id="page-prices">
+      <div class="grid2">
+        <div>
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Live prices — all model securities</span>
+              <button class="btn btn-ghost btn-sm" onclick="fetchAllPrices()">
+                <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v4h-4"/><path d="M12 6A6 6 0 102 8"/></svg>Refresh
+              </button>
+            </div>
+            <div class="card-body" id="price-table-area">
+              <div class="empty"><h3>No prices loaded</h3><p>Click Refresh to fetch current prices</p></div>
+            </div>
+            <div class="last-updated" id="price-last-updated"></div>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">Price feed info</span></div>
+            <div class="card-body">
+              <div class="notice ok">
+                <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="6"/><path d="M4.5 7l2 2 3-3"/></svg>
+                Prices fetched via <strong>/api/price</strong> Vercel serverless function — handles Yahoo Finance cookie/crumb auth server-side. End-of-day data.
+              </div>
+              <div class="notice info">
+                <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="6"/><path d="M7 6v4M7 4.5v.01"/></svg>
+                ASX: <code>CBA → CBA.AX</code> &nbsp;·&nbsp; US: <code>MSFT.NAS → MSFT</code> &nbsp;·&nbsp; LSE: <code>BARC.LSE → BARC.L</code>
+              </div>
+              <div class="notice warn">
+                <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 2L13 12H1L7 2z"/><path d="M7 6v3M7 10.5v.01"/></svg>
+                Live prices require the <strong>deployed Vercel URL</strong>. Local file: falls back to CSV prices.
+              </div>
+              <div id="feed-status-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════════
+let models = {};
+let activeModelId = null;
+let clientHoldings = [];
+let lastResults = [];
+let livePrices = {};
+let pricesFetching = false;
+
+// Sleeves: array of { modelId, allocationPct }
+let sleeves = [{ modelId: '', allocationPct: 100 }];
+
+// ═══════════════════════════════════════════════════════════════════════
+// TICKER HELPERS
+// ═══════════════════════════════════════════════════════════════════════
+function stripSuffix(raw) {
+  return raw.replace(/\.(XAU|ASX|AUS|NYS|NAS|LSE|NZX|HKG|TSX)$/i, '').toUpperCase().trim();
+}
+function toYahoo(ticker, exch) {
+  const t = ticker.toUpperCase();
+  if (t === 'CASH') return null;
+  if (exch === 'NAS' || exch === 'NYS' || exch === 'NYSE' || exch === 'NASDAQ') return t;
+  if (exch === 'LSE') return t + '.L';
+  return t + '.AX'; // default ASX
+}
+function inferExch(rawTicker) {
+  const u = rawTicker.toUpperCase();
+  if (u.endsWith('.NAS')) return 'NAS';
+  if (u.endsWith('.NYS')) return 'NYS';
+  if (u.endsWith('.LSE')) return 'LSE';
+  return 'ASX';
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL PERSISTENCE — Vercel KV (primary) + localStorage (fallback)
+// ═══════════════════════════════════════════════════════════════════════
+const MODELS_API = '/api/models';
+const HARDCODED_DEFAULTS = {
+  'active-income': { name:'Active Income', holdings:[
+    {ticker:'CBA',name:'Commonwealth Bank',target:8,exch:'ASX'},
+    {ticker:'WBC',name:'Westpac',target:6,exch:'ASX'},
+    {ticker:'NAB',name:'National Australia Bank',target:6,exch:'ASX'},
+    {ticker:'ANZ',name:'ANZ Banking Group',target:5,exch:'ASX'},
+    {ticker:'MQG',name:'Macquarie Group',target:5,exch:'ASX'},
+    {ticker:'WES',name:'Wesfarmers',target:5,exch:'ASX'},
+    {ticker:'TLS',name:'Telstra',target:5,exch:'ASX'},
+    {ticker:'BHP',name:'BHP Group',target:5,exch:'ASX'},
+    {ticker:'RIO',name:'Rio Tinto',target:4,exch:'ASX'},
+    {ticker:'CSL',name:'CSL Limited',target:5,exch:'ASX'},
+    {ticker:'IAG',name:'Insurance Australia Group',target:4,exch:'ASX'},
+    {ticker:'SUN',name:'Suncorp Group',target:4,exch:'ASX'},
+    {ticker:'APA',name:'APA Group',target:4,exch:'ASX'},
+    {ticker:'ASX',name:'ASX Limited',target:5,exch:'ASX'},
+    {ticker:'CASH',name:'Cash & equivalents',target:9,exch:'CASH'},
+  ]},
+  'international-equities': { name:'International Equities', holdings:[
+    {ticker:'AAPL',name:'Apple Inc',target:8,exch:'NAS'},
+    {ticker:'MSFT',name:'Microsoft',target:8,exch:'NAS'},
+    {ticker:'NVDA',name:'NVIDIA',target:7,exch:'NAS'},
+    {ticker:'AMZN',name:'Amazon',target:6,exch:'NAS'},
+    {ticker:'GOOGL',name:'Alphabet',target:6,exch:'NAS'},
+    {ticker:'META',name:'Meta Platforms',target:5,exch:'NAS'},
+    {ticker:'TSLA',name:'Tesla',target:4,exch:'NAS'},
+    {ticker:'ASML',name:'ASML Holding',target:4,exch:'NAS'},
+    {ticker:'TSM',name:'Taiwan Semiconductor',target:4,exch:'NAS'},
+    {ticker:'LLY',name:'Eli Lilly',target:4,exch:'NYS'},
+    {ticker:'JPM',name:'JPMorgan Chase',target:4,exch:'NYS'},
+    {ticker:'UNH',name:'UnitedHealth Group',target:4,exch:'NYS'},
+    {ticker:'SAP',name:'SAP SE',target:3,exch:'NYS'},
+    {ticker:'CASH',name:'Cash & equivalents',target:5,exch:'CASH'},
+  ]},
+  'growth': { name:'Growth', holdings:[
+    {ticker:'CSL',name:'CSL Limited',target:8,exch:'ASX'},
+    {ticker:'WES',name:'Wesfarmers',target:7,exch:'ASX'},
+    {ticker:'REA',name:'REA Group',target:6,exch:'ASX'},
+    {ticker:'CBA',name:'Commonwealth Bank',target:6,exch:'ASX'},
+    {ticker:'BHP',name:'BHP Group',target:6,exch:'ASX'},
+    {ticker:'RMD',name:'ResMed',target:5,exch:'ASX'},
+    {ticker:'COL',name:'Coles Group',target:5,exch:'ASX'},
+    {ticker:'PME',name:'Pro Medicus',target:5,exch:'ASX'},
+    {ticker:'ALU',name:'Altium',target:4,exch:'ASX'},
+    {ticker:'SFR',name:'Sandfire Resources',target:4,exch:'ASX'},
+    {ticker:'XRO',name:'Xero',target:5,exch:'ASX'},
+    {ticker:'CASH',name:'Cash & equivalents',target:5,exch:'CASH'},
+  ]}
+};
+let kvAvailable = false;
+let saveDebounceTimer = null;
+
+function setSyncStatus(state) {
+  let el = document.getElementById('sync-status');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sync-status';
+    el.style.cssText = 'display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:500;border:1px solid var(--border);background:var(--bg);color:var(--text-secondary);transition:all 0.3s;';
+    const pill = document.getElementById('price-pill');
+    if (pill) pill.insertAdjacentElement('beforebegin', el);
+  }
+  const cfg = {
+    saving: { bg:'var(--hold-bg)', bc:'#FDE68A', c:'#92400E', label:'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px solid currentColor;border-top-color:transparent;animation:spin 0.8s linear infinite"></span> Saving…' },
+    saved:  { bg:'var(--buy-bg)',  bc:'#6EE7B7', c:'#065F46', label:'✓ Synced to cloud' },
+    local:  { bg:'var(--bg)',      bc:'var(--border)', c:'var(--text-secondary)', label:'⬡ Local storage only' },
+    error:  { bg:'var(--sell-bg)', bc:'#FECACA', c:'var(--sell)', label:'⚠ Cloud save failed' },
+  }[state] || {};
+  el.style.background = cfg.bg; el.style.borderColor = cfg.bc; el.style.color = cfg.c;
+  el.innerHTML = cfg.label || state;
+}
+
+async function initModels() {
+  // 1. Show local cache instantly while we wait for KV
+  const localRaw = localStorage.getItem('mp_rb_models_v3');
+  if (localRaw) { try { models = JSON.parse(localRaw); } catch(e) {} }
+  if (!Object.keys(models).length) models = JSON.parse(JSON.stringify(HARDCODED_DEFAULTS));
+
+  // Render immediately from local/defaults so UI is instant
+  renderSidebar(); renderModelList(); updateSleeveSelects();
+
+  // 2. Load authoritative copy from Vercel KV
+  try {
+    const r = await fetch(MODELS_API, { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    kvAvailable = true;
+
+    if (data.models && Object.keys(data.models).length > 0) {
+      // KV has models — use them as the source of truth
+      models = data.models;
+      localStorage.setItem('mp_rb_models_v3', JSON.stringify(models));
+      setSyncStatus('saved');
+      renderSidebar(); renderModelList(); updateSleeveSelects();
+    } else {
+      // KV is empty — push our current models up so all devices get them
+      setSyncStatus('saving');
+      await saveToKV();
+    }
+  } catch(e) {
+    // KV unavailable (local file, pre-deploy, network issue) — localStorage only
+    setSyncStatus('local');
+  }
+}
+
+async function saveToKV() {
+  try {
+    const r = await fetch(MODELS_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ models }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!r.ok) throw new Error(r.status);
+    setSyncStatus('saved');
+    // Fade back to subtle after 3s
+    setTimeout(() => setSyncStatus('saved'), 3000);
+  } catch(e) {
+    setSyncStatus('error');
+  }
+}
+
+function persistModels() {
+  // Always write to localStorage immediately (instant, no await)
+  localStorage.setItem('mp_rb_models_v3', JSON.stringify(models));
+  renderSidebar(); renderModelList(); updateSleeveSelects();
+
+  // Debounce KV save — coalesce rapid edits into one write (500ms quiet period)
+  if (kvAvailable) {
+    setSyncStatus('saving');
+    clearTimeout(saveDebounceTimer);
+    saveDebounceTimer = setTimeout(saveToKV, 500);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SLEEVE MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════
+function renderSleeves() {
+  const list = document.getElementById('sleeve-list');
+  list.innerHTML = sleeves.map((s, i) => `
+    <div class="sleeve-row">
+      <select onchange="sleeves[${i}].modelId=this.value;updateSleeveUI()" style="flex:2;font-size:12px;">
+        <option value="">— select model —</option>
+        ${Object.entries(models).map(([id,m])=>`<option value="${id}" ${s.modelId===id?'selected':''}>${m.name}</option>`).join('')}
+      </select>
+      <input type="number" value="${s.allocationPct}" min="0" max="100" step="1"
+        oninput="sleeves[${i}].allocationPct=parseFloat(this.value)||0;updateSleeveUI()"
+        style="flex:0 0 65px;text-align:right;font-size:12px;">
+      <span class="sleeve-pct">%</span>
+      ${sleeves.length > 1 ? `<button class="del-btn" onclick="removeSleeve(${i})" title="Remove sleeve">
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 2l8 8M10 2L2 10"/></svg>
+      </button>` : '<div style="width:24px"></div>'}
+    </div>`).join('');
+  updateSleeveUI();
+}
+
+function updateSleeveUI() {
+  const total = sleeves.reduce((s,sl) => s + (sl.allocationPct||0), 0);
+  const ok = Math.abs(total - 100) < 0.1;
+  const tv = document.getElementById('sleeve-total-val');
+  const bar = document.getElementById('alloc-bar');
+  if (tv) { tv.textContent = total.toFixed(0) + '%'; tv.className = 'sleeve-total-val ' + (ok ? 'ok' : 'warn'); }
+  if (bar) bar.style.width = Math.min(100, total) + '%';
+}
+
+function addSleeve() {
+  sleeves.push({ modelId: '', allocationPct: 0 });
+  renderSleeves();
+}
+
+function removeSleeve(i) {
+  sleeves.splice(i, 1);
+  renderSleeves();
+}
+
+function updateSleeveSelects() {
+  // Re-render sleeves to pick up new model options
+  renderSleeves();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// LIVE PRICE FETCHING
+// ═══════════════════════════════════════════════════════════════════════
+const PRICE_API = '/api/price';
+const PRICE_BATCH_SIZE = 20;
+
+function getAllModelTickers() {
+  const tickers = new Map();
+  Object.values(models).forEach(m => {
+    m.holdings.forEach(h => {
+      const t = h.ticker.toUpperCase();
+      if (t !== 'CASH') tickers.set(t, h.exch || 'ASX');
+    });
+  });
+  return tickers;
+}
+
+async function fetchAllPrices() {
+  if (pricesFetching) return;
+  pricesFetching = true;
+  setPricePill('loading', 'Fetching prices…');
+
+  const tickers = getAllModelTickers();
+  if (!tickers.size) { setPricePill('error', 'No securities in models'); pricesFetching = false; return; }
+
+  const symbolMap = new Map();
+  tickers.forEach((exch, ticker) => {
+    const yahoo = toYahoo(ticker, exch);
+    if (yahoo) symbolMap.set(yahoo, ticker);
+  });
+
+  const allSymbols = [...symbolMap.keys()];
+  let ok = 0; let failed = [];
+
+  for (let i = 0; i < allSymbols.length; i += PRICE_BATCH_SIZE) {
+    const batch = allSymbols.slice(i, i + PRICE_BATCH_SIZE);
+    setPricePill('loading', `${Math.min(i+PRICE_BATCH_SIZE, allSymbols.length)}/${allSymbols.length} prices…`);
+    try {
+      const r = await fetch(`${PRICE_API}?symbols=${encodeURIComponent(batch.join(','))}`, { signal: AbortSignal.timeout(15000) });
+      if (!r.ok) throw new Error(`${r.status}`);
+      const data = await r.json();
+      if (data.prices) {
+        for (const [ys, pd] of Object.entries(data.prices)) {
+          const ct = symbolMap.get(ys) || ys.replace('.AX','');
+          if (pd && pd.price != null) { livePrices[ct] = { price:pd.price, change:pd.change||0, changePct:pd.changePct||0, currency:pd.currency||'AUD', fetched:new Date() }; ok++; }
+          else { livePrices[ct] = null; failed.push(ct); }
+        }
+        (data.missing||[]).forEach(ys => { const ct = symbolMap.get(ys)||ys; livePrices[ct]=null; failed.push(ct); });
+      }
+    } catch(e) {
+      batch.forEach(ys => { const ct=symbolMap.get(ys)||ys; livePrices[ct]=null; failed.push(ct); });
+    }
+  }
+
+  pricesFetching = false;
+  const total = symbolMap.size;
+  if (ok === 0) { setPricePill('error', 'Price feed unavailable'); if (window.location.protocol==='file:'||window.location.hostname==='localhost') showLocalNotice(); }
+  else if (ok < total) setPricePill('ok', `${ok}/${total} prices loaded`);
+  else setPricePill('ok', `All ${ok} prices ✓`);
+
+  renderPriceTable();
+  if (clientHoldings.length) renderPreview();
+  const ts = new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  document.getElementById('price-last-updated').textContent = `Last updated: ${ts}${failed.length?' · '+failed.length+' failed: '+failed.slice(0,4).join(', ')+(failed.length>4?'…':''):''}`;
+}
+
+function showLocalNotice() {
+  const el = document.getElementById('feed-status-list');
+  if (el) el.innerHTML = `<div class="notice warn"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 2L13 12H1L7 2z"/><path d="M7 6v3M7 10.5v.01"/></svg><span>Running locally — <code>/api/price</code> only works on Vercel. CSV prices used as fallback.</span></div>`;
+}
+
+function setPricePill(state, text) {
+  document.getElementById('price-pill').className = 'price-pill ' + state;
+  document.getElementById('price-pill-text').textContent = text;
+  document.getElementById('price-pulse').className = state === 'loading' ? 'pulse spin' : 'pulse';
+}
+function getPrice(ticker) { const p = livePrices[ticker.toUpperCase()]; return p ? p.price : null; }
+
+// ═══════════════════════════════════════════════════════════════════════
+// PRICE TABLE PAGE
+// ═══════════════════════════════════════════════════════════════════════
+function renderPriceTable() {
+  const el = document.getElementById('price-table-area');
+  const tickers = getAllModelTickers();
+  if (!tickers.size) { el.innerHTML='<div class="empty"><h3>No model securities</h3></div>'; return; }
+  let html = '';
+  tickers.forEach((exch, ticker) => {
+    const pd = livePrices[ticker];
+    const price = pd ? ((pd.currency==='USD'?'US$':'$')+pd.price.toFixed(2)) : '—';
+    const chgPct = pd ? ((pd.changePct>=0?'+':'')+pd.changePct.toFixed(2)+'%') : '';
+    const chgCls = pd ? (pd.changePct>=0?'up':'down') : '';
+    html += `<div class="price-row"><span class="price-ticker">${ticker}</span><span class="price-name">${getModelName(ticker)}</span><span class="price-val">${price}</span><span class="price-chg ${chgCls}">${chgPct}</span></div>`;
+  });
+  el.innerHTML = html;
+}
+function getModelName(ticker) {
+  for (const m of Object.values(models)) { const h=m.holdings.find(h=>h.ticker.toUpperCase()===ticker.toUpperCase()); if(h) return h.name; }
+  return ticker;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// FILE PARSING
+// ═══════════════════════════════════════════════════════════════════════
+function handleDrop(e) { e.preventDefault(); document.getElementById('drop-zone').classList.remove('drag-over'); const f=e.dataTransfer.files[0]; if(f) readFile(f); }
+function handleFile(e) { const f=e.target.files[0]; if(f) readFile(f); }
+function readFile(f) {
+  document.getElementById('file-status').textContent = 'Reading ' + f.name + '…';
+  const reader = new FileReader();
+  reader.onload = ev => { parseCSV(ev.target.result); document.getElementById('file-status').textContent = '✓ ' + f.name + ' — ' + clientHoldings.length + ' holdings'; };
+  reader.readAsText(f);
+}
+function parsePaste() { parseCSV(document.getElementById('paste-area').value); }
+
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/).filter(l=>l.trim());
+  clientHoldings = [];
+  const first = lines[0].toLowerCase();
+  const isPraemium = first.includes('security') && first.includes('units') && first.includes('market value');
+  const startIdx = (first.includes('security')||first.includes('ticker')||first.includes('symbol')) ? 1 : 0;
+
+  for (let i = startIdx; i < lines.length; i++) {
+    const cols = parseCSVLine(lines[i]);
+    if (cols.length < 3) continue;
+    let rawTicker, name, exch, units, price, value;
+    if (isPraemium && cols.length >= 8) {
+      rawTicker=cols[0].trim(); name=cols[1].trim(); exch=cols[2].trim();
+      units=parseFloat(cols[3])||0; price=parseFloat(cols[6])||0; value=parseFloat(cols[7])||0;
+      if (!value && units && price) value=units*price;
+    } else {
+      rawTicker=cols[0].trim(); name=cols[1].trim()||rawTicker; exch=inferExch(rawTicker);
+      if (cols.length>=4 && parseFloat(cols[3])>0) { units=parseFloat(cols[2])||0; price=parseFloat(cols[3])||0; value=units*price; }
+      else { value=parseFloat(cols[2])||0; price=parseFloat(cols[3])||0; units=price>0?value/price:0; }
+    }
+    const ticker = stripSuffix(rawTicker);
+    if (!ticker || value<=0) continue;
+    clientHoldings.push({ ticker, name, exch, units, price, value, rawTicker });
+  }
+  renderPreview();
+}
+
+function parseCSVLine(line) {
+  const cols=[]; let cur=''; let inQ=false;
+  for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){inQ=!inQ;continue;}if(c===','&&!inQ){cols.push(cur.trim());cur='';continue;}cur+=c;}
+  cols.push(cur.trim()); return cols;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PREVIEW
+// ═══════════════════════════════════════════════════════════════════════
+function renderPreview() {
+  const el = document.getElementById('preview-area');
+  if (!clientHoldings.length) { el.innerHTML='<div class="empty"><h3>No holdings loaded</h3><p>Upload CSV or paste above</p></div>'; return; }
+  const total = clientHoldings.reduce((s,h)=>s+h.value,0);
+  const rows = clientHoldings.map(h => {
+    const w = total>0 ? h.value/total*100 : 0;
+    const lp = getPrice(h.ticker);
+    const pDisp = lp ? '$'+lp.toFixed(2) : (h.price ? '$'+h.price.toFixed(2) : '—');
+    return `<tr><td><strong>${h.ticker}</strong> <span style="font-size:10px;color:var(--text-muted)">${h.exch||''}</span><br><span style="font-size:10px;color:var(--text-secondary)">${h.name}</span></td><td class="num right">${h.units>0?h.units.toLocaleString('en-AU',{maximumFractionDigits:0}):'—'}</td><td class="num right">${pDisp}</td><td class="num right">$${h.value.toLocaleString('en-AU',{maximumFractionDigits:0})}</td><td class="num right">${w.toFixed(1)}%</td></tr>`;
+  }).join('');
+  el.innerHTML=`<div class="ovf"><table><thead><tr><th>Security</th><th class="right">Units</th><th class="right">Price</th><th class="right">Value</th><th class="right">Weight</th></tr></thead><tbody>${rows}</tbody><tfoot><tr style="background:var(--bg)"><td colspan="3" style="font-weight:600;font-size:11px;border-top:1px solid var(--border)">Total</td><td class="num right" style="font-weight:700;border-top:1px solid var(--border)">$${total.toLocaleString('en-AU',{maximumFractionDigits:0})}</td><td class="num right" style="font-weight:700;border-top:1px solid var(--border)">100%</td></tr></tfoot></table></div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// REBALANCE ENGINE
+// ═══════════════════════════════════════════════════════════════════════
+function runRebalance() {
+  if (!clientHoldings.length) { alert('Load client holdings first.'); return; }
+
+  const validSleeves = sleeves.filter(s => s.modelId && models[s.modelId] && s.allocationPct > 0);
+  if (!validSleeves.length) { alert('Add at least one sleeve with a model selected and allocation > 0%.'); return; }
+
+  const totalAlloc = sleeves.reduce((s,sl)=>s+(sl.allocationPct||0),0);
+  if (Math.abs(totalAlloc - 100) > 0.5) {
+    if (!confirm(`Total allocation is ${totalAlloc.toFixed(0)}% (not 100%). Continue anyway?`)) return;
+  }
+
+  const extraCash = parseFloat(document.getElementById('cash-in').value) || 0;
+  const tolerance = 5; // fixed ±5% per spec; could be per-sleeve later
+
+  // Build updated client map using live prices where available
+  const clientMap = {};
+  clientHoldings.forEach(h => {
+    const lp = getPrice(h.ticker);
+    const updatedPrice = lp || h.price;
+    const updatedValue = updatedPrice && h.units ? updatedPrice * h.units : h.value;
+    clientMap[h.ticker] = { ...h, price: updatedPrice, value: updatedValue };
+  });
+
+  const totalPortfolioValue = Object.values(clientMap).reduce((s,h)=>s+h.value,0) + extraCash;
+
+  // Run rebalance per sleeve
+  const allSleeveResults = [];
+  const allTradesByTicker = {}; // for cross-sleeve summary
+
+  // Track which client holdings are accounted for across all sleeves
+  const coveredTickers = new Set();
+
+  validSleeves.forEach(sleeve => {
+    const model = models[sleeve.modelId];
+    const sleeveValue = totalPortfolioValue * sleeve.allocationPct / 100;
+    const modelMap = {};
+    model.holdings.forEach(h => { modelMap[h.ticker.toUpperCase()] = h; });
+
+    const results = [];
+    model.holdings.forEach(mh => {
+      const tk = mh.ticker.toUpperCase();
+      coveredTickers.add(tk);
+      const client = clientMap[tk];
+      const targetPct = mh.target; // % within this sleeve
+      const targetValue = sleeveValue * targetPct / 100;
+      const currentValue = client ? client.value : 0;
+      // Current weight within sleeve context
+      const currentPct = sleeveValue > 0 ? currentValue / sleeveValue * 100 : 0;
+      const drift = currentPct - targetPct;
+      const tradeDollar = targetValue - currentValue;
+      const price = (client&&client.price) || getPrice(tk) || null;
+      const units = client ? client.units : 0;
+      const tradeUnits = price&&price>0 ? Math.abs(tradeDollar)/price : null;
+
+      let action;
+      if (tk === 'CASH') { action = Math.abs(drift)<=tolerance?'hold':drift<0?'buy':'sell'; }
+      else if (!client||currentValue===0) { action='initiate'; }
+      else if (Math.abs(drift)<=tolerance) { action='hold'; }
+      else if (drift<-tolerance) { action='buy'; }
+      else { action='sell'; }
+
+      results.push({ ticker:tk, name:mh.name, exch:mh.exch||'ASX', currentPct, targetPct, drift, currentValue, targetValue, tradeDollar, price, units, tradeUnits, action, inModel:true });
+      if (!allTradesByTicker[tk]) allTradesByTicker[tk] = { tradeDollar:0, action:[] };
+      allTradesByTicker[tk].tradeDollar += tradeDollar;
+    });
+
+    // Client holdings not in THIS sleeve model — only flag as exit if no other sleeve covers them
+    // (handled after all sleeves are processed)
+
+    allSleeveResults.push({ sleeve, model, sleeveValue, results, tolerance });
+  });
+
+  // Find holdings not covered by any sleeve → flag as exit
+  const exitResults = [];
+  Object.values(clientMap).forEach(h => {
+    if (!coveredTickers.has(h.ticker)) {
+      const currentPct = totalPortfolioValue > 0 ? h.value/totalPortfolioValue*100 : 0;
+      exitResults.push({ ticker:h.ticker, name:h.name, exch:h.exch||'', currentPct, targetPct:0, drift:currentPct, currentValue:h.value, targetValue:0, tradeDollar:-h.value, price:h.price, units:h.units, tradeUnits:h.price>0?h.value/h.price:null, action:'exit', inModel:false });
+    }
+  });
+
+  lastResults = { sleeveResults: allSleeveResults, exitResults, totalPortfolioValue, extraCash, validSleeves };
+  renderResults(lastResults);
+}
+
+function renderResults({ sleeveResults, exitResults, totalPortfolioValue, extraCash, validSleeves }) {
+  document.getElementById('results-area').style.display = 'block';
+
+  const sleeveNames = validSleeves.map(s=>models[s.modelId].name).join(' + ');
+  document.getElementById('topbar-sub').textContent = '— ' + sleeveNames + '  ·  $' + totalPortfolioValue.toLocaleString('en-AU',{maximumFractionDigits:0}) + ' total';
+
+  // Aggregate stats across all sleeves
+  let totalBuys=0, totalSells=0, totalHolds=0, totalExits=exitResults.length;
+  let totalBuyDollar=0, totalSellDollar=0;
+  sleeveResults.forEach(({results}) => {
+    results.forEach(r => {
+      if (r.action==='buy'||r.action==='initiate') { totalBuys++; totalBuyDollar+=Math.max(0,r.tradeDollar); }
+      else if (r.action==='sell') { totalSells++; totalSellDollar+=Math.abs(Math.min(0,r.tradeDollar)); }
+      else if (r.action==='hold') totalHolds++;
+    });
+  });
+
+  document.getElementById('stats-row').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Total portfolio</div><div class="stat-value">$${(totalPortfolioValue/1000).toFixed(0)}k</div><div class="stat-sub">${validSleeves.length} sleeve${validSleeves.length>1?'s':''} · ${extraCash>0?'+ $'+extraCash.toLocaleString('en-AU',{maximumFractionDigits:0})+' cash':'No extra cash'}</div></div>
+    <div class="stat-card"><div class="stat-label">Buy / Initiate</div><div class="stat-value green">${totalBuys}</div><div class="stat-sub">$${totalBuyDollar.toLocaleString('en-AU',{maximumFractionDigits:0})} to invest</div></div>
+    <div class="stat-card"><div class="stat-label">Sell</div><div class="stat-value red">${totalSells}</div><div class="stat-sub">$${totalSellDollar.toLocaleString('en-AU',{maximumFractionDigits:0})} to raise</div></div>
+    <div class="stat-card"><div class="stat-label">In tolerance ±5%</div><div class="stat-value teal">${totalHolds}</div><div class="stat-sub">No action needed</div></div>
+    <div class="stat-card"><div class="stat-label">Exits (off-model)</div><div class="stat-value blue">${totalExits}</div><div class="stat-sub">Not in any sleeve</div></div>`;
+
+  // Build result tables per sleeve
+  const tableHTML = sleeveResults.map(({sleeve, model, sleeveValue, results, tolerance}) => {
+    const sortOrder = {exit:0,sell:1,buy:2,initiate:3,hold:4};
+    const sorted = [...results].sort((a,b) => sortOrder[a.action]-sortOrder[b.action]);
+    const rows = sorted.map(r => buildRow(r, tolerance)).join('');
+    const sleeveTotal = results.filter(r=>r.inModel).reduce((s,r)=>s+r.currentPct,0);
+    const targetTotal = results.filter(r=>r.inModel).reduce((s,r)=>s+r.targetPct,0);
+    const priceNote = Object.keys(livePrices).length > 0 ? '<span style="color:var(--buy)">✓ Live prices</span>' : '<span style="color:var(--hold)">CSV prices</span>';
+
+    return `
+      <div class="sleeve-divider">
+        <div class="sleeve-divider-line"></div>
+        <div class="sleeve-divider-label">${model.name}</div>
+        <div class="sleeve-divider-alloc">${sleeve.allocationPct}% · $${sleeveValue.toLocaleString('en-AU',{maximumFractionDigits:0})}</div>
+        <div class="sleeve-divider-line"></div>
+      </div>
+      <div class="card mb12">
+        <div class="card-header">
+          <span class="card-title">${model.name} — rebalance instructions</span>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-ghost btn-sm" onclick="exportSleeveCSV('${sleeve.modelId}')">
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 10v2h10v-2M7 2v7M4 6l3 3 3-3"/></svg>Export CSV
+            </button>
+            <button class="btn btn-ghost btn-sm" onclick="window.print()">
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="10" height="7" rx="1"/><path d="M4 5V3h6v2M4 9h2M4 11h6"/></svg>Print
+            </button>
+          </div>
+        </div>
+        <div class="legend">
+          <div class="leg"><div class="leg-dot" style="background:var(--buy)"></div>Buy/Initiate</div>
+          <div class="leg"><div class="leg-dot" style="background:var(--sell)"></div>Sell</div>
+          <div class="leg"><div class="leg-dot" style="background:#166534"></div>Hold (in band)</div>
+          <div class="leg"><div class="leg-dot" style="background:var(--initiate)"></div>New position</div>
+          <div class="leg"><div class="leg-dot" style="background:var(--exit)"></div>Exit</div>
+        </div>
+        <div class="ovf">
+          <table>
+            <thead><tr>
+              <th>Security</th><th class="right">Last price</th><th class="right">Units</th>
+              <th class="right">Cur. weight</th><th class="right">Target</th><th class="right">Drift</th>
+              <th>Drift visual</th><th class="right">Current $</th><th class="right">Target $</th>
+              <th class="right">Trade $</th><th class="right">~Units</th><th>Action</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+            <tfoot><tr style="background:var(--bg)">
+              <td colspan="3" style="font-weight:600;font-size:11px;border-top:2px solid var(--border)">Totals</td>
+              <td class="num right" style="font-weight:700;border-top:2px solid var(--border)">${sleeveTotal.toFixed(1)}%</td>
+              <td class="num right" style="font-weight:700;border-top:2px solid var(--border)">${targetTotal.toFixed(1)}%</td>
+              <td colspan="7" style="border-top:2px solid var(--border)"></td>
+            </tr></tfoot>
+          </table>
+        </div>
+        <div class="last-updated">${priceNote} · Calculated ${new Date().toLocaleString('en-AU',{dateStyle:'short',timeStyle:'short'})}</div>
+      </div>`;
+  }).join('');
+
+  // Exit positions table
+  const exitHTML = exitResults.length ? `
+    <div class="sleeve-divider">
+      <div class="sleeve-divider-line"></div>
+      <div class="sleeve-divider-label" style="color:var(--exit);border-color:#FECACA;background:var(--exit-bg)">Off-model positions</div>
+      <div class="sleeve-divider-line"></div>
+    </div>
+    <div class="card mb12">
+      <div class="card-header"><span class="card-title">Holdings not covered by any sleeve — review for exit</span></div>
+      <div class="ovf"><table>
+        <thead><tr><th>Security</th><th class="right">Units</th><th class="right">Value</th><th class="right">% of portfolio</th><th>Action</th></tr></thead>
+        <tbody>${exitResults.map(r=>`<tr><td><strong>${r.ticker}</strong><br><span style="font-size:10px;color:var(--text-secondary)">${r.name}</span></td><td class="num right">${r.units>0?Math.round(r.units).toLocaleString():''}</td><td class="num right">$${r.currentValue.toLocaleString('en-AU',{maximumFractionDigits:0})}</td><td class="num right dp">${r.currentPct.toFixed(1)}%</td><td><span class="badge badge-exit">✕ Exit</span></td></tr>`).join('')}</tbody>
+      </table></div>
+    </div>` : '';
+
+  document.getElementById('results-tables').innerHTML = tableHTML + exitHTML;
+  document.getElementById('results-area').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function buildRow(r, tolerance) {
+  const driftCls = r.drift>0?'dp':r.drift<0?'dn':'dz';
+  const tradeCls = r.tradeDollar>0?'dn':r.tradeDollar<0?'dp':'dz';
+  const tradeStr = (r.tradeDollar>=0?'+$':'-$') + Math.abs(r.tradeDollar).toLocaleString('en-AU',{maximumFractionDigits:0});
+  const pDisp = r.price ? '$'+r.price.toFixed(2) : '—';
+  const uDisp = r.tradeUnits&&r.action!=='hold' ? '~'+Math.round(r.tradeUnits).toLocaleString() : '—';
+  const liveTag = livePrices[r.ticker] ? '<span style="font-size:9px;color:var(--teal);margin-left:3px">●</span>' : '';
+  return `<tr>
+    <td><strong>${r.ticker}</strong>${liveTag} <span style="font-size:9px;color:var(--text-muted)">${r.exch}</span><br><span style="font-size:10px;color:var(--text-secondary)">${r.name}</span></td>
+    <td class="num right">${pDisp}</td>
+    <td class="num right">${r.units>0?r.units.toLocaleString('en-AU',{maximumFractionDigits:0}):'—'}</td>
+    <td class="num right">${r.currentPct.toFixed(1)}%</td>
+    <td class="num right">${r.targetPct.toFixed(1)}%</td>
+    <td class="${driftCls} right">${(r.drift>0?'+':'')+r.drift.toFixed(1)}%</td>
+    <td>${buildBar(r.currentPct,r.targetPct,tolerance,r.action)}</td>
+    <td class="num right">$${r.currentValue.toLocaleString('en-AU',{maximumFractionDigits:0})}</td>
+    <td class="num right">$${r.targetValue.toLocaleString('en-AU',{maximumFractionDigits:0})}</td>
+    <td class="${tradeCls} right">${tradeStr}</td>
+    <td class="num right">${uDisp}</td>
+    <td>${getBadge(r.action)}</td>
+  </tr>`;
+}
+
+function buildBar(cur, tgt, tol, action) {
+  const range = Math.max(tol*2+8,22);
+  const min=tgt-range/2; const max=tgt+range/2;
+  const px=v=>Math.max(2,Math.min(98,(v-min)/(max-min)*100));
+  const tx=px(tgt); const cx=px(cur); const bl=px(tgt-tol); const br=px(tgt+tol);
+  const dotCls = action==='hold'?'in':action==='initiate'?'new':action==='buy'?'under':'over';
+  const dot = action==='initiate'
+    ? `<div style="position:absolute;left:${tx}%;top:-3px;width:12px;height:12px;border-radius:50%;border:2px dashed var(--initiate);transform:translateX(-50%);background:var(--surface);"></div>`
+    : `<div class="drift-dot ${dotCls}" style="left:${cx}%"></div>`;
+  return `<div class="drift-track"><div class="drift-band" style="left:${bl}%;width:${br-bl}%"></div><div class="drift-target" style="left:${tx}%"></div>${dot}</div>`;
+}
+
+function getBadge(a) {
+  return {buy:'<span class="badge badge-buy">↑ Buy</span>',sell:'<span class="badge badge-sell">↓ Sell</span>',hold:'<span class="badge badge-hold">✓ Hold</span>',initiate:'<span class="badge badge-initiate">★ Initiate</span>',exit:'<span class="badge badge-exit">✕ Exit</span>'}[a]||'';
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// EXPORT
+// ═══════════════════════════════════════════════════════════════════════
+function exportSleeveCSV(modelId) {
+  if (!lastResults || !lastResults.sleeveResults) return;
+  const sr = lastResults.sleeveResults.find(s=>s.sleeve.modelId===modelId);
+  if (!sr) return;
+  const hdr = ['Ticker','Security Name','Exchange','Units Held','Last Price','Current Weight %','Target Weight %','Drift %','Current Value AUD','Target Value AUD','Trade Amount AUD','Approx Units','Action'];
+  const rows = sr.results.map(r=>[r.ticker,r.name,r.exch,r.units>0?Math.round(r.units):'',r.price?r.price.toFixed(4):'',r.currentPct.toFixed(2),r.targetPct.toFixed(2),r.drift.toFixed(2),r.currentValue.toFixed(2),r.targetValue.toFixed(2),r.tradeDollar.toFixed(2),r.tradeUnits?Math.round(r.tradeUnits):'',r.action.toUpperCase()]);
+  const csv = [hdr,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=`rebalance_${models[modelId].name.replace(/\s/g,'_')}_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL XLSX IMPORT / EXPORT
+// ═══════════════════════════════════════════════════════════════════════
+function downloadTemplate() {
+  if (typeof XLSX === 'undefined') { alert('SheetJS not loaded — check your internet connection.'); return; }
+  const ws_data = [
+    ['Ticker','Name','Exchange','Target %'],
+    ['CBA','Commonwealth Bank','ASX',8],
+    ['WBC','Westpac','ASX',6],
+    ['NAB','National Australia Bank','ASX',6],
+    ['MSFT','Microsoft','NAS',8],
+    ['AAPL','Apple Inc','NAS',7],
+    ['CASH','Cash & equivalents','CASH',5],
+  ];
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+  ws['!cols'] = [{wch:12},{wch:32},{wch:12},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Model Portfolio');
+
+  // Instructions sheet
+  const inst = XLSX.utils.aoa_to_sheet([
+    ['Market Partners Portfolio Rebalancer — Model Template'],
+    [''],
+    ['Column','Required','Notes'],
+    ['Ticker','Yes','ASX/US ticker code without exchange suffix. e.g. CBA, MSFT'],
+    ['Name','Yes','Full security name'],
+    ['Exchange','Yes','ASX, NAS, NYS, LSE, or CASH'],
+    ['Target %','Yes','Target weight as a percentage. All rows must sum to 100.'],
+    [''],
+    ['Exchange codes:','',''],
+    ['ASX','','Australian Securities Exchange'],
+    ['NAS','','NASDAQ'],
+    ['NYS','','New York Stock Exchange'],
+    ['LSE','','London Stock Exchange'],
+    ['CASH','','Cash or cash equivalents'],
+  ]);
+  inst['!cols'] = [{wch:18},{wch:12},{wch:50}];
+  XLSX.utils.book_append_sheet(wb, inst, 'Instructions');
+
+  XLSX.writeFile(wb, 'MP_Model_Portfolio_Template.xlsx');
+}
+
+function importModelFile(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  const status = document.getElementById('import-status');
+  status.textContent = 'Reading ' + f.name + '…';
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      let holdings;
+      if (f.name.endsWith('.csv') || f.name.endsWith('.txt')) {
+        holdings = parseModelCSV(ev.target.result);
+      } else {
+        const wb = XLSX.read(ev.target.result, { type:'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval:'' });
+        holdings = parseModelRows(rows);
+      }
+
+      if (!holdings.length) { status.textContent = '✕ No valid rows found. Check column headers: Ticker, Name, Exchange, Target %'; return; }
+
+      const total = holdings.reduce((s,h)=>s+(h.target||0),0);
+      const name = prompt(`Model name for imported portfolio? (${holdings.length} securities, total ${total.toFixed(1)}%)`);
+      if (!name) { status.textContent = 'Import cancelled.'; return; }
+
+      const id = name.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'') + '-' + Date.now().toString(36);
+      models[id] = { name, holdings };
+      persistModels();
+      activeModelId = id;
+      renderEditor();
+      status.textContent = `✓ Imported "${name}" — ${holdings.length} securities. Total: ${total.toFixed(1)}%${Math.abs(total-100)>0.5?' ⚠ check weights sum to 100%':''}`;
+    } catch(err) {
+      status.textContent = '✕ Error: ' + err.message;
+    }
+  };
+  if (f.name.endsWith('.csv') || f.name.endsWith('.txt')) reader.readAsText(f);
+  else reader.readAsArrayBuffer(f);
+}
+
+function parseModelRows(rows) {
+  // Flexible header matching
+  const headerMap = {};
+  if (!rows.length) return [];
+  const firstRow = rows[0];
+  Object.keys(firstRow).forEach(k => {
+    const kl = k.toLowerCase().replace(/[^a-z]/g,'');
+    if (kl.includes('tick')||kl==='code'||kl==='symbol') headerMap.ticker = k;
+    else if (kl.includes('name')||kl.includes('security')) headerMap.name = k;
+    else if (kl.includes('exch')||kl.includes('market')) headerMap.exch = k;
+    else if (kl.includes('target')||kl.includes('weight')||kl.includes('pct')||kl.includes('percent')||kl==='%') headerMap.target = k;
+  });
+  return rows.map(row => {
+    const ticker = String(row[headerMap.ticker]||'').toUpperCase().trim();
+    const name = String(row[headerMap.name]||ticker).trim();
+    const exch = String(row[headerMap.exch]||'ASX').toUpperCase().trim();
+    const target = parseFloat(row[headerMap.target])||0;
+    if (!ticker || target <= 0 && ticker !== 'CASH') return null;
+    return { ticker, name, exch: ['ASX','NAS','NYS','LSE','CASH'].includes(exch)?exch:'ASX', target };
+  }).filter(Boolean);
+}
+
+function parseModelCSV(text) {
+  const lines = text.trim().split(/\r?\n/).filter(l=>l.trim());
+  const headerLine = lines[0].toLowerCase();
+  const cols = parseCSVLine(headerLine);
+  const idxTicker = cols.findIndex(c=>c.includes('tick')||c==='code'||c==='symbol');
+  const idxName = cols.findIndex(c=>c.includes('name')||c.includes('security'));
+  const idxExch = cols.findIndex(c=>c.includes('exch')||c.includes('market'));
+  const idxTarget = cols.findIndex(c=>c.includes('target')||c.includes('weight')||c.includes('pct')||c.includes('%'));
+  if (idxTicker === -1 || idxTarget === -1) throw new Error('Could not find Ticker or Target % columns');
+  return lines.slice(1).map(line => {
+    const c = parseCSVLine(line);
+    const ticker = (c[idxTicker]||'').toUpperCase().trim();
+    const name = idxName>=0 ? (c[idxName]||ticker).trim() : ticker;
+    const exch = idxExch>=0 ? (c[idxExch]||'ASX').toUpperCase().trim() : 'ASX';
+    const target = parseFloat(c[idxTarget])||0;
+    if (!ticker || target<=0) return null;
+    return { ticker, name, exch:['ASX','NAS','NYS','LSE','CASH'].includes(exch)?exch:'ASX', target };
+  }).filter(Boolean);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL EDITOR
+// ═══════════════════════════════════════════════════════════════════════
+function renderSidebar() {
+  document.getElementById('sidebar-model-list').innerHTML =
+    Object.entries(models).map(([id,m]) => {
+      const tot = m.holdings.reduce((s,h)=>s+h.target,0);
+      return `<div class="model-chip ${activeModelId===id?'active':''}" onclick="selectModel('${id}')"><span class="model-chip-name">${m.name}</span><span class="model-chip-ct">${tot.toFixed(0)}%</span></div>`;
+    }).join('');
+}
+
+function renderModelList() {
+  const el = document.getElementById('model-list-area');
+  if (!Object.keys(models).length) { el.innerHTML='<div class="empty"><h3>No models</h3><p>Create or import a model</p></div>'; return; }
+  el.innerHTML = Object.entries(models).map(([id,m]) => {
+    const tot = m.holdings.reduce((s,h)=>s+h.target,0);
+    const ok = Math.abs(tot-100)<0.1;
+    return `<div class="model-list-item ${activeModelId===id?'active':''}" onclick="selectModel('${id}')">
+      <div style="flex:1"><div class="model-list-name">${m.name}</div><div class="model-list-meta">${m.holdings.length} securities</div></div>
+      <div style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:${ok?'var(--buy)':'var(--sell)'}">${tot.toFixed(0)}%</div>
+    </div>`;
+  }).join('');
+}
+
+function selectModel(id) {
+  activeModelId = id;
+  renderSidebar(); renderModelList();
+  if (document.getElementById('page-models').classList.contains('active')) renderEditor();
+  updateSleeveSelects();
+  showPage('models');
+}
+
+function renderEditor() {
+  if (!activeModelId||!models[activeModelId]) return;
+  const m = models[activeModelId];
+  document.getElementById('editor-title').textContent = m.name;
+  document.getElementById('editor-actions').innerHTML =
+    `<button class="btn btn-ghost btn-sm" onclick="saveModel()">Save</button>
+     <button class="btn btn-danger btn-sm" onclick="deleteModel()">Delete</button>`;
+  const tot = m.holdings.reduce((s,h)=>s+(parseFloat(h.target)||0),0);
+  const ok = Math.abs(tot-100)<0.1;
+  document.getElementById('model-editor').innerHTML = `
+    <div class="field-row mb12"><div><label class="fl">Model name</label><input type="text" id="edit-name" value="${m.name}"></div></div>
+    <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;padding:0 2px;"><span>Ticker / Name / Exchange</span><span>Target %</span></div>
+    <div id="holding-list">
+      ${m.holdings.map((h,i)=>`
+        <div class="model-holding-row">
+          <input type="text" value="${h.ticker}" placeholder="TICKER" oninput="updH(${i},'ticker',this.value)">
+          <input type="text" value="${h.name}" placeholder="Security name" oninput="updH(${i},'name',this.value)">
+          <select oninput="updH(${i},'exch',this.value)" style="max-width:72px;font-size:12px;">
+            ${['ASX','NAS','NYS','LSE','CASH'].map(e=>`<option ${(h.exch||'ASX')===e?'selected':''}>${e}</option>`).join('')}
+          </select>
+          <input type="number" value="${h.target}" min="0" max="100" step="0.5" oninput="updH(${i},'target',this.value)">
+          <span class="pct">%</span>
+          <button class="del-btn" onclick="delH(${i})"><svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 2l8 8M10 2L2 10"/></svg></button>
+        </div>`).join('')}
+    </div>
+    <button class="btn btn-ghost" style="margin-top:10px;font-size:12px;" onclick="addH()">
+      <svg viewBox="0 0 12 12" fill="currentColor" width="10" height="10"><path d="M6 1v10M1 6h10"/></svg>Add security
+    </button>
+    <div class="total-bar">
+      <span>Total allocation:</span>
+      <span class="total-val ${ok?'ok':'warn'}" id="total-val">${tot.toFixed(1)}%</span>
+      ${!ok?'<span style="font-size:10px;color:var(--sell)">⚠ must equal 100%</span>':''}
+    </div>`;
+}
+
+function updH(i,f,v) {
+  if(!activeModelId) return;
+  models[activeModelId].holdings[i][f] = f==='target' ? parseFloat(v)||0 : f==='ticker' ? v.toUpperCase() : v;
+  const tot = models[activeModelId].holdings.reduce((s,h)=>s+(parseFloat(h.target)||0),0);
+  const el=document.getElementById('total-val');
+  if(el){el.textContent=tot.toFixed(1)+'%';el.className='total-val '+(Math.abs(tot-100)<0.1?'ok':'warn');}
+}
+function addH() { if(!activeModelId) return; models[activeModelId].holdings.push({ticker:'',name:'',target:0,exch:'ASX'}); renderEditor(); }
+function delH(i) { if(!activeModelId) return; models[activeModelId].holdings.splice(i,1); renderEditor(); }
+
+function saveModel() {
+  if(!activeModelId) return;
+  models[activeModelId].name = document.getElementById('edit-name').value;
+  persistModels();
+  const btn=document.querySelector('[onclick="saveModel()"]');
+  const orig=btn.textContent; btn.textContent='✓ Saved'; btn.style.color='var(--buy)';
+  setTimeout(()=>{btn.textContent=orig;btn.style.color='';},1500);
+}
+function deleteModel() {
+  if(!activeModelId||!confirm(`Delete "${models[activeModelId].name}"?`)) return;
+  delete models[activeModelId]; activeModelId=null; persistModels();
+  document.getElementById('editor-title').textContent='Select a model to edit';
+  document.getElementById('editor-actions').innerHTML='';
+  document.getElementById('model-editor').innerHTML='<div class="empty" style="padding:28px 0;"><h3>Model deleted</h3></div>';
+}
+function newModel() {
+  const name=prompt('Model name:'); if(!name) return;
+  const id=name.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'')+'-'+Date.now().toString(36);
+  models[id]={name,holdings:[{ticker:'',name:'',target:100,exch:'ASX'}]};
+  activeModelId=id; persistModels(); renderEditor();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════════════════════════════
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  const idx={rebalance:0,models:1,prices:2}[id]??0;
+  document.querySelectorAll('.nav-btn')[idx]?.classList.add('active');
+  document.getElementById('topbar-title').textContent={rebalance:'Rebalance client portfolio',models:'Model portfolios',prices:'Live prices'}[id]||id;
+  if(id==='prices') renderPriceTable();
+  if(id==='models'){renderModelList();if(activeModelId)renderEditor();}
+}
+
+function switchTab(t) {
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>b.classList.toggle('active',(t==='upload'&&i===0)||(t==='paste'&&i===1)));
+  document.getElementById('tab-upload').classList.toggle('active',t==='upload');
+  document.getElementById('tab-paste').classList.toggle('active',t==='paste');
+}
+
+function clearRebalance() {
+  clientHoldings=[]; lastResults=null;
+  document.getElementById('preview-area').innerHTML='<div class="empty"><h3>No holdings loaded</h3><p>Upload CSV or paste above</p></div>';
+  document.getElementById('results-area').style.display='none';
+  document.getElementById('file-status').textContent='';
+  document.getElementById('cash-in').value='';
+  document.getElementById('topbar-sub').textContent='';
+  document.getElementById('results-tables').innerHTML='';
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════════
+initModels();
+renderSidebar();
+renderModelList();
+renderSleeves();
+</script>
+</body>
+</html>

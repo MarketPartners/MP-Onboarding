@@ -1,1 +1,13 @@
-{ "framework": "nextjs" }
+{
+  "version": 2,
+  "builds": [
+    { "src": "index.html", "use": "@vercel/static" },
+    { "src": "api/price.js", "use": "@vercel/node" },
+    { "src": "api/models.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/api/price", "dest": "/api/price.js" },
+    { "src": "/api/models", "dest": "/api/models.js" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
+}
