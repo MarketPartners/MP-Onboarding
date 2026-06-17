@@ -1,41 +1,46 @@
 /**
- * Vercel Serverless Function — Model portfolio persistence via Vercel KV
- * GET  /api/models          → returns all saved models
- * POST /api/models          → saves all models (full replace)
+ * Vercel Serverless Function — Model portfolio persistence via Upstash Redis
+ * GET  /api/models  → load all models
+ * POST /api/models  → save all models (full replace)
  *
- * Uses Vercel KV (Redis-compatible key-value store).
- * Env vars injected automatically when you connect a KV database in Vercel dashboard:
- *   KV_REST_API_URL, KV_REST_API_TOKEN
+ * Upstash Redis REST API is identical in structure to Vercel KV.
+ * Env vars are auto-injected when you connect Upstash via the Vercel marketplace:
+ *   UPSTASH_REDIS_REST_URL
+ *   UPSTASH_REDIS_REST_TOKEN
+ *
+ * Vercel KV users: this also works with KV_REST_API_URL / KV_REST_API_TOKEN
+ * by falling through to those names automatically.
  */
 
 const MODELS_KEY = 'mp_rebalancer_models';
 
-// Thin KV client — uses the Vercel KV REST API directly
-// (avoids needing @vercel/kv package, works with plain fetch)
-async function kvGet(key) {
-  const { KV_REST_API_URL, KV_REST_API_TOKEN } = process.env;
-  if (!KV_REST_API_URL || !KV_REST_API_TOKEN) return null;
-  const r = await fetch(`${KV_REST_API_URL}/get/${encodeURIComponent(key)}`, {
-    headers: { Authorization: `Bearer ${KV_REST_API_TOKEN}` },
-  });
-  if (!r.ok) return null;
-  const data = await r.json();
-  return data?.result ?? null; // returns null if key doesn't exist
+function getEnv() {
+  // Support both Upstash (marketplace) and Vercel KV env var names
+  const url   = process.env.UPSTASH_REDIS_REST_URL   || process.env.KV_REST_API_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN  || process.env.KV_REST_API_TOKEN;
+  return { url, token };
 }
 
-async function kvSet(key, value) {
-  const { KV_REST_API_URL, KV_REST_API_TOKEN } = process.env;
-  if (!KV_REST_API_URL || !KV_REST_API_TOKEN) throw new Error('KV not configured');
-  const r = await fetch(`${KV_REST_API_URL}/set/${encodeURIComponent(key)}`, {
+async function redisGet(key) {
+  const { url, token } = getEnv();
+  if (!url || !token) return { value: null, configured: false };
+  const r = await fetch(`${url}/get/${encodeURIComponent(key)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) throw new Error(`Redis GET failed: ${r.status}`);
+  const data = await r.json();
+  return { value: data?.result ?? null, configured: true };
+}
+
+async function redisSet(key, value) {
+  const { url, token } = getEnv();
+  if (!url || !token) throw new Error('Redis not configured — add UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN in Vercel environment variables');
+  const r = await fetch(`${url}/set/${encodeURIComponent(key)}`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${KV_REST_API_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ value }),
   });
-  if (!r.ok) throw new Error(`KV set failed: ${r.status}`);
-  return true;
+  if (!r.ok) throw new Error(`Redis SET failed: ${r.status}`);
 }
 
 export default async function handler(req, res) {
@@ -44,24 +49,25 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // ── GET: load models from KV ──────────────────────────────────────
+  // ── GET: load models ──────────────────────────────────────────────
   if (req.method === 'GET') {
     try {
-      const raw = await kvGet(MODELS_KEY);
-      if (!raw) {
-        // KV empty — return empty so frontend uses its built-in defaults
+      const { value, configured } = await redisGet(MODELS_KEY);
+      if (!configured) {
+        return res.status(200).json({ models: null, source: 'not-configured' });
+      }
+      if (!value) {
         return res.status(200).json({ models: null, source: 'empty' });
       }
-      const models = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      return res.status(200).json({ models, source: 'kv' });
+      const models = typeof value === 'string' ? JSON.parse(value) : value;
+      return res.status(200).json({ models, source: 'redis', count: Object.keys(models).length });
     } catch (err) {
-      console.error('KV GET error:', err.message);
-      // Return graceful failure — frontend falls back to localStorage
+      console.error('GET error:', err.message);
       return res.status(200).json({ models: null, source: 'error', error: err.message });
     }
   }
 
-  // ── POST: save models to KV ───────────────────────────────────────
+  // ── POST: save models ─────────────────────────────────────────────
   if (req.method === 'POST') {
     try {
       let body = '';
@@ -74,10 +80,10 @@ export default async function handler(req, res) {
       if (!models || typeof models !== 'object') {
         return res.status(400).json({ error: 'Invalid payload — expected { models: {...} }' });
       }
-      await kvSet(MODELS_KEY, JSON.stringify(models));
+      await redisSet(MODELS_KEY, JSON.stringify(models));
       return res.status(200).json({ ok: true, count: Object.keys(models).length });
     } catch (err) {
-      console.error('KV POST error:', err.message);
+      console.error('POST error:', err.message);
       return res.status(500).json({ error: err.message });
     }
   }
