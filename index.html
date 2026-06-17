@@ -598,26 +598,35 @@ async function initModels() {
   // Render immediately from local/defaults so UI is instant
   renderSidebar(); renderModelList(); updateSleeveSelects();
 
-  // 2. Load authoritative copy from Vercel KV
+  // 2. Load authoritative copy from Upstash — KV is ALWAYS the source of truth
+  //    Never push hardcoded defaults to KV automatically — that causes the
+  //    race condition where a new device overwrites real saved models
   try {
     const r = await fetch(MODELS_API, { signal: AbortSignal.timeout(6000) });
-    if (!r.ok) throw new Error(r.status);
+    if (!r.ok) throw new Error('API ' + r.status);
     const data = await r.json();
     kvAvailable = true;
 
     if (data.models && Object.keys(data.models).length > 0) {
-      // KV has models — use them as the source of truth
+      // KV has real models — always use these, overwrite local cache
       models = data.models;
       localStorage.setItem('mp_rb_models_v3', JSON.stringify(models));
       setSyncStatus('saved');
       renderSidebar(); renderModelList(); updateSleeveSelects();
+
+    } else if (data.source === 'not-configured') {
+      // Env vars not set yet — degrade gracefully to local only
+      kvAvailable = false;
+      setSyncStatus('local');
+
     } else {
-      // KV is empty — push our current models up so all devices get them
-      setSyncStatus('saving');
-      await saveToKV();
+      // KV is empty (first deploy, key cleared) — show local only
+      // User must explicitly hit Save in the model editor to initialise KV
+      // This prevents new-device writes from corrupting saved models
+      setSyncStatus('local');
     }
   } catch(e) {
-    // KV unavailable (local file, pre-deploy, network issue) — localStorage only
+    // KV unreachable (local file, network issue, pre-deploy)
     setSyncStatus('local');
   }
 }
@@ -640,16 +649,28 @@ async function saveToKV() {
 }
 
 function persistModels() {
-  // Always write to localStorage immediately (instant, no await)
+  // 1. Always write to localStorage immediately (instant, never fails)
   localStorage.setItem('mp_rb_models_v3', JSON.stringify(models));
   renderSidebar(); renderModelList(); updateSleeveSelects();
 
-  // Debounce KV save — coalesce rapid edits into one write (500ms quiet period)
+  // 2. Debounce KV write — coalesce rapid edits into one save (500ms quiet period)
+  //    kvAvailable is only true once we've confirmed the API route is reachable
   if (kvAvailable) {
     setSyncStatus('saving');
     clearTimeout(saveDebounceTimer);
     saveDebounceTimer = setTimeout(saveToKV, 500);
   }
+}
+
+// Exposed to model editor Save button — lets user manually push to KV
+// when KV was empty on load (avoids the automatic-push race condition)
+async function forceSaveToKV() {
+  if (!kvAvailable) {
+    setSyncStatus('local');
+    return;
+  }
+  setSyncStatus('saving');
+  await saveToKV();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1303,6 +1324,9 @@ function saveModel() {
   if(!activeModelId) return;
   models[activeModelId].name = document.getElementById('edit-name').value;
   persistModels();
+  // forceSaveToKV handles the case where KV was empty on load and needs
+  // to be initialised — persistModels already debounces if kvAvailable
+  forceSaveToKV();
   const btn=document.querySelector('[onclick="saveModel()"]');
   const orig=btn.textContent; btn.textContent='✓ Saved'; btn.style.color='var(--buy)';
   setTimeout(()=>{btn.textContent=orig;btn.style.color='';},1500);
